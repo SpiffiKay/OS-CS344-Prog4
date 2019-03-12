@@ -1,7 +1,7 @@
 /**************************************************************************
  * Title: keygen.c							  *
  * Name: Tiffani Auer							  *
- * Due: Mar 4, 2019							  *
+ * Due: Mar 18, 2019							  *
  * Description: This program generates a randomized key of the length	  *
  * given by the user.							  *
  * ***********************************************************************/
