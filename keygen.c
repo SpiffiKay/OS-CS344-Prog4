@@ -16,14 +16,14 @@ void Validate(int, int);
 void GetKey();
 
 
-int main(int argc, char** argv){
+int main(int argc, char* argv[]){
   srand(time(0));  //seeding rand
   int len = 0,
       i = 0;
  
   //get value given into int var (if exists)
   if(argc >= 2)
-    sscanf(argv[1], "%d", &len);
+    len = atoi(argv[1]);
   
   //make sure key length is given and valid
   Validate(argc, len);
