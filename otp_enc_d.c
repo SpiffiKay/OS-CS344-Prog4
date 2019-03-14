@@ -6,11 +6,16 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#define RESP_SIZE 70000
+
+void SendMsg(int, char*, int);
+char* RecMsg(int, char*);
 void ValidateSource(int);
 void ProcessInfo(int);
 void Encode(int);
 void ReadPlaintxt(int);
 void ReadKey(int);
+
 
 int main(int argc, char *argv[])
 {
@@ -103,44 +108,82 @@ int main(int argc, char *argv[])
 
 
 /**************************************************************************
+ *  * Name: SendMsg()
+ *   * Description:
+ *    * ***********************************************************************/
+void SendMsg(int socket, char* msg, int size){
+   int s = 0,
+       loop = size; 
+    
+  //loop until full message sent
+  while(s < loop)
+  {
+    s = send(socket, msg, size, 0);
+    //move pointers based on what successfully sent
+    size =- s;
+    msg += s;
+                         
+    //if error
+    if(s == -1)
+    {
+      fprintf(stderr, "enc_c: error sending message\n");
+      exit(2);
+    }
+  }
+}
+  
+
+/**************************************************************************
+* Name: RecMsg()
+* Description:
+* ***********************************************************************/
+char* RecMsg(int socket, char* msg){
+  int r = 0,
+      full = 1;
+  char rec[20];
+  memset(rec, '\0', 20);
+                                                                        
+  do{
+      r = recv(socket, rec, 20, 0);
+      //if receive buffer isn't full
+      if(r != 20)
+        full = 0;
+                                                                                                   //if error
+      if(r == -1)
+      {                                                                                              fprintf(stderr, "enc_c: error receiving message\n");
+        exit(2);
+      }                                                                                            strcat(msg, rec);                                                                            printf("in rec msg loop. msg: %s\n", msg);
+   }while(full);
+                                                                                                return msg;
+}
+
+
+/**************************************************************************
  * Name: ValidateSource()
  * Description:
  * ************************************************************************/
 void ValidateSource(int socket){
-  int r = 0,
-      s = 0;
-  char valid[7],
-       denied[6] = "denied",
+  char denied[6] = "denied",
        accept[6] = "accept";
-  memset(valid, '\0', 7);
+  char* valid = calloc(RESP_SIZE, sizeof(char));
+  memset(valid, '\0', 70000);
   
-  while(r < 6)
-  {
-    r = recv(socket, valid, 6, 0);
-  }
+   valid = RecMsg(socket, valid);
 
    //if auth invalid
    if(strcmp(valid, "encode") != 0)
    {
-     //respond that permission is denied
-     while(s < 6)
-     {
-       s = send(socket, denied, 6, 0);
-     }
-
+     SendMsg(socket, denied, 6);
      //exit child process
      fprintf(stderr, "otp_enc_d: only opt_enc is allowed to use this connection\n");
      exit(1);
    }
    //if auth is valid
    else
-   {
-      //respond permission granted
-      while(s < 6)
-     {
-       s = send(socket, accept, 6, 0);
-     }
-   }
+     SendMsg(socket, accept, 6);
+
+  //free alloc mem
+  free(valid);
 }
 
 
