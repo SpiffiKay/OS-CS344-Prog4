@@ -17,16 +17,15 @@ void Encode(int, char*, char*);
 
 int main(int argc, char *argv[])
 {
-  int listnSock,
+  int lsock,
       port,
-      chRead,
       cnnctFD,
       spawnPID = 0,
       i = 0;
-  socklen_t cInfo;
-  struct sockaddr_in servAdd,
-                     clientAdd;
-  memset((char *)&servAdd, '\0', sizeof(servAdd));
+  socklen_t cinfo;
+  struct sockaddr_in servadd,
+                     clientadd;
+  memset((char *)&servadd, '\0', sizeof(servadd));
 
   //check if enough args included
   if (argc < 2)
@@ -37,27 +36,27 @@ int main(int argc, char *argv[])
 
   // Set up the address struct for the server
   port = atoi(argv[1]);
-  servAdd.sin_family = AF_INET;
-  servAdd.sin_port = htons(port);
-  servAdd.sin_addr.s_addr = INADDR_ANY;
+  servadd.sin_family = AF_INET;
+  servadd.sin_port = htons(port);
+  servadd.sin_addr.s_addr = INADDR_ANY;
 
   // Set up the socket
-  listnSock = socket(AF_INET, SOCK_STREAM, 0);
-  if (listnSock < 0)
+  lsock = socket(AF_INET, SOCK_STREAM, 0);
+  if (lsock < 0)
   {
     fprintf(stderr, "otp_enc_d: error creating socket\n");
     exit(2);
   }
 
   //bind socket to port
-  if (bind(listnSock, (struct sockaddr *)&servAdd, sizeof(servAdd)) < 0)
+  if (bind(lsock, (struct sockaddr *)&servadd, sizeof(servadd)) < 0)
   {
     fprintf(stderr, "otp_enc_d: error binding socket to port %d\n", port);
     exit(2);
   }
 
-  //listen for client port connections	(can accept up to 5)
-  if(listen(listnSock, 5) == -1)
+  //lsock for client port connections	(can accept up to 5)
+  if(listen(lsock, 5) == -1)
   {
     fprintf(stderr, "otp_enc_d: unable to listen on port %d\n", port);
     exit(2);
@@ -68,8 +67,8 @@ int main(int argc, char *argv[])
   {
 
     // Accept a connection, blocking if one is not available until one connects
-    cInfo = sizeof(clientAdd);
-    cnnctFD = accept(listnSock, (struct sockaddr *)&clientAdd, &cInfo); // Accept
+    cinfo = sizeof(clientadd);
+    cnnctFD = accept(lsock, (struct sockaddr *)&clientadd, &cinfo); // Accept
     if (cnnctFD < 0)
       fprintf(stderr, "otp_enc_d: connection acception failed\n");
 
@@ -97,8 +96,8 @@ int main(int argc, char *argv[])
        }
    }
 
-  //close listening socket
-  close(listnSock);
+  //close lsocking socket
+  close(lsock);
 
   return 0;
 }
@@ -106,7 +105,10 @@ int main(int argc, char *argv[])
 
 /**************************************************************************
  * Name: ValidateSource()
- * Description:
+ * Description: Takes the socket used to communicate with the client as a 
+ * param. Recieves a message from the client. If it is exactly as expected, 
+ * responds with the accept message. If anything else is received, the
+ * denied message is sent.
  * ************************************************************************/
 void ValidateSource(int socket){
   char denied[6] = "denied",
@@ -135,7 +137,11 @@ void ValidateSource(int socket){
 
 /**************************************************************************
  * Name: ProcessInfo()
- * Description:
+ * Description: Takes the socket used to communicate with the client as a 
+ * param. Receives the plaintext and key messages from the client. It then 
+ * finds the length of the messages and double checks the messages are 
+ * composed of valid characters ('A-Z' and ' '). If valid, these messages are
+ * then sent to encode to be used to encode the plaintext message.
  * ************************************************************************/
 void ProcessInfo(int socket){
   int len = 0;
@@ -145,12 +151,15 @@ void ProcessInfo(int socket){
   memset(key, '\0', RESP_SIZE);
 
   //receive plaintext and keygen files
-  text = RecMsg(socket, text); 
+  text = RecMsg(socket, text);
   key = RecMsg(socket, key);
 
   //make sure plaintext has no illegal chars
   len = strlen(text);
   CheckChars(socket, len, text);
+  len = 0;
+  len = strlen(key);
+  CheckChars(socket, len, key);
 
   //encrypt file to stdout
   Encode(socket, text, key);
@@ -163,7 +172,9 @@ void ProcessInfo(int socket){
 
 /**************************************************************************
  * Name: SendMsg()
- * Description:
+ * Description: Takes the socket used to communicate with the client as a 
+ * param. Also takes a char array holding the message to be sent, and the 
+ * size of that array, as params. It then sends messages to the client. 
  * ***********************************************************************/
 void SendMsg(int socket, char* msg, int size){
    int s = 0,
@@ -189,7 +200,13 @@ void SendMsg(int socket, char* msg, int size){
 
 /**************************************************************************
 * Name: RecMsg()
-* Description:
+* Description: Takes the socket used to communicate with the client as a 
+* param. Also takes an empty char array to store the received message in.
+* This function receives a message from the client it is connected to, 
+* 20 chars at a time, and concatenates that chunk of the message to the 
+* char array passed to the function. Once the amount of chars sent is 
+* < 20, it is known that the message is finished sending, and the loop
+* ends. The received message is then returned. 
 * ***********************************************************************/
 char* RecMsg(int socket, char* msg){
   int r = 0,
@@ -206,16 +223,20 @@ char* RecMsg(int socket, char* msg){
       if(r == -1)
       {                                                                                              fprintf(stderr, "enc_d: error receiving message from client\n");
         exit(2);
-      }                                                                                            strcat(msg, rec);                                                                     
+      }                                                                                            strcat(msg, rec);
    }while(full);
                                                                                                 return msg;
 }
 
 
 /**************************************************************************
- *  * Name: CheckChars()
- *   * Description:
- *    * ***********************************************************************/
+ * Name: CheckChars()
+ * Description: Takes the socket used to communicate with the client as a 
+ * param. It also takes a char array holding the message, and the size of 
+ * that array, as params. It then compares the passed array to an array of 
+ * valid chars. If all the chars are valid the program continues. If not, 
+ * the socket is closed and the program ends.
+ * ***********************************************************************/
 void CheckChars(int socket, int len, char* txt){
   char valid[28] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
   int i = 0,
@@ -236,7 +257,7 @@ void CheckChars(int socket, int len, char* txt){
          break;
       }
     }
-  
+
     //found an invalid char
     if(inBounds == 0)
     {
@@ -249,9 +270,20 @@ void CheckChars(int socket, int len, char* txt){
 
 /**************************************************************************
  * Name: Encode()
- * Description:
+ * Description: Takes the socket used to communicate with the client as a 
+ * param. Also takes char arrays holding the plaintext message and the key
+ * sent from the client. An encoded message is built by adding the 
+ * plaintext and key messages together, char by char. If a sum of 2 chars
+ * goes out of bounds (>27), then the number is - 27 to find the correct 
+ * value. 
+ *
+ * The encoded message is then sent to the client.
+ *
+ * NOTE: Because the ASCII values added  together cause problems when they
+ * go above 127, they first are converted over to 1-27, added together, 
+ * then converted back to their ASCII values.
  * ************************************************************************/
-void Encode(int socket, char* txt, char* key){ 
+void Encode(int socket, char* txt, char* key){
   int len = strlen(txt),
       i = 0,
       j = 0;
@@ -263,7 +295,6 @@ void Encode(int socket, char* txt, char* key){
 
   for(i; i < len; i++)
   {
-
     j = 0;
     t = '\0';
     k = '\0';
@@ -280,7 +311,7 @@ void Encode(int socket, char* txt, char* key){
 
     //encrypt
     encoded[i] = t + k + 64;
-    //subtract if out of bounds 
+    //subtract if out of bounds
     if(encoded[i] > 90)
        encoded[i] -= 27;
      //turn '@' to ' '
@@ -289,7 +320,7 @@ void Encode(int socket, char* txt, char* key){
   }
 
   //send encrypted message to client
-  SendMsg(socket, encoded, len);  
-  //free alloc mem 
-  free(encoded);   
+  SendMsg(socket, encoded, len);
+  //free alloc mem
+  free(encoded);
 }
