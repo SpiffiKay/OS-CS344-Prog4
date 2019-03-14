@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
 /**************************************************************************
  * Name: ValidateSource()
  * Description: Takes the socket used to communicate with the client as a 
- * param. Recieves a message from the client. If it is exactly as expected, 
+ * param. Receives a message from the client. If it is exactly as expected, 
  * responds with the accept message. If anything else is received, the
  * denied message is sent.
  * ************************************************************************/
