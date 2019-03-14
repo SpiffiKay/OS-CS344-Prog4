@@ -5,59 +5,61 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netdb.h> 
+#include <netdb.h>
 
 #define RESP_SIZE 70000
 
-void ProcessFiles(int, char*, char*);
 void GetAuth(int);
-int FileSize(int, char*);
-char* FileToArray(char*, int, FILE*);
-void CheckChars(int, int, char[]);
+void ProcessFiles(int, char*, char*);
+void SendFile(int, int, char*);
 void SendMsg(int, char*, int);
 char* RecMsg(int, char*);
 void SendFile(int, int, char*);
+int FileSize(int, char*);
+char* FileToArray(char*, int, FILE*);
+void CheckChars(int, int, char*);
+void CompSize(int, int, int);
 
 
 int main(int argc, char *argv[])
 {
   int socketFD,
       portNum,
-      chWrit, 
+      chWrit,
       chRead;
   struct sockaddr_in servAdd;
   struct hostent* sHostInfo;
   memset((char*)&servAdd, '\0', sizeof(servAdd));
- 
+
   //check enough args were given
-  if (argc < 4) 
+  if (argc < 4)
   {
-      fprintf(stderr,"otp_enc: too few arguments were given\n"); 
-      exit(2); 
+      fprintf(stderr,"otp_enc: too few arguments were given\n");
+      exit(2);
    }
 
   // Set up the server address struct
-  portNum = atoi(argv[3]); 
-  servAdd.sin_family = AF_INET; 
-  servAdd.sin_port = htons(portNum); 
-  sHostInfo = gethostbyname("localhost"); 
+  portNum = atoi(argv[3]);
+  servAdd.sin_family = AF_INET;
+  servAdd.sin_port = htons(portNum);
+  sHostInfo = gethostbyname("localhost");
 
-  if (sHostInfo == NULL) 
-  { 
-    fprintf(stderr, "otp_enc: no such host exists\n"); 
-    exit(2); 
+  if (sHostInfo == NULL)
+  {
+    fprintf(stderr, "otp_enc: no such host exists\n");
+    exit(2);
   }
-	
+
   //copy in host info
-  memcpy((char*)&servAdd.sin_addr.s_addr, (char*)sHostInfo->h_addr, sHostInfo->h_length); 
+  memcpy((char*)&servAdd.sin_addr.s_addr, (char*)sHostInfo->h_addr, sHostInfo->h_length);
 
   //create the socket
-  socketFD = socket(AF_INET, SOCK_STREAM, 0); 
-  if (socketFD < 0) 
+  socketFD = socket(AF_INET, SOCK_STREAM, 0);
+  if (socketFD < 0)
   {
     fprintf(stderr, "otp_enc: error opening socket\n");
     exit(2);
-  }	
+  }
 
   // Connect to server
   if (connect(socketFD, (struct sockaddr*)&servAdd, sizeof(servAdd)) < 0)
@@ -65,26 +67,14 @@ int main(int argc, char *argv[])
     fprintf(stderr, "otp_enc: error connecting to server\n");
     exit(2);
   }
-
+  
   //make sure authorized to connect
   GetAuth(socketFD);
- 
-  //send plaintext
-  SendPlaintxt(socketFD, argv[1]);
-  
-  //send key
-  SendKey(txtSize, socketFD, argv[2]);
-  
+
+  //communicate with server
+  ProcessFiles(socketFD, argv[1], argv[2]);
+
   return 0;
-}
-
-
-/**************************************************************************
- * Name: GetAuth()
- * Description:
- * ***********************************************************************/
-void ProcessFiles(int, char*, char*){
-
 }
 
 
@@ -102,8 +92,7 @@ void GetAuth(int socket){
 
   //recieve response (accept or denied)
   resp = RecMsg(socket, resp);
-  
-  printf("in GetAuth. resp: %s\n", resp);
+
   //if response is denied
   if(strcmp(resp, "denied") == 0)
   {
@@ -118,6 +107,119 @@ void GetAuth(int socket){
 
 
 /**************************************************************************
+ * Name: ProcessFiles()
+ * Description:
+ * ***********************************************************************/
+void ProcessFiles(int socket, char* text, char* key){
+  int tlen = 0,
+      klen = 0;
+  char* encoded = calloc(RESP_SIZE, sizeof(char));
+  memset(encoded, '\0', RESP_SIZE);
+
+  //get the length of files and compare length
+  tlen = FileSize(socket, text);  //plaintext
+  klen = FileSize(socket, key);   //key
+  CompSize(socket, tlen, klen);
+  
+  //validate and send plaintext and key
+  SendFile(socket, tlen, text);
+  SendFile(socket, klen, key);
+
+  //receive encoded message and print to screen
+  encoded = RecMsg(socket, encoded);
+  printf("%s\n", encoded);
+  fflush(stdout);
+
+  //free alloc mem
+  free(encoded);
+}
+
+
+/**************************************************************************
+ * Name: SendFile()
+ * Description:
+ * ***********************************************************************/
+void SendFile(int socket, int len, char* txt){
+  FILE *fp;
+  char *farray =  calloc (len, sizeof(char));
+  memset(farray, '\0', len);
+
+  //open file
+  fp = fopen(txt, "r");
+  if(fp == NULL)
+  {
+    fprintf(stderr, "otp_enc: couldn't open file: %s\n", fp);
+    close(socket);
+    exit(1);
+  }
+
+  farray = FileToArray(farray, len, fp);  //read file to array
+  CheckChars(socket, len, farray);  //check that all chars given are valid
+   
+  //send file
+  SendMsg(socket, farray, len);
+
+  //close file and free alloc mem
+  fclose(fp);
+  free(farray);
+}
+
+
+/**************************************************************************
+ * Name: SendMsg()
+ * Description:
+ * ***********************************************************************/
+void SendMsg(int socket, char* msg, int size){
+   int s = 0,
+       loop = size;
+    
+  //loop until full message sent
+  while(s < loop)
+  {
+    s = send(socket, msg, size, 0);
+    //move pointers based on what successfully sent
+    size =- s;
+    msg += s;
+
+    //if error
+    if(s == -1)
+    {
+      fprintf(stderr, "otp_enc: error sending message\n");
+      exit(2);
+    }
+  }
+}
+
+
+/**************************************************************************
+ * Name: RecMsg()
+ * Description:
+ * ***********************************************************************/
+char* RecMsg(int socket, char* msg){
+  int r = 0,
+      full = 1;
+  char rec[20];
+  memset(rec, '\0', 20);
+
+  do{
+     r = recv(socket, rec, 20, 0);
+     //if receive buffer isn't full
+     if(r != 20)
+       full = 0;
+
+    //if error
+    if(r == -1)
+    {
+      fprintf(stderr, "otp_enc: error receiving message\n");
+      exit(2);
+    }
+    strcat(msg, rec);
+  }while(full);
+  return msg;
+}
+
+
+/**************************************************************************
  * Name: FileSize()
  * Description:
  * ***********************************************************************/
@@ -128,14 +230,14 @@ int FileSize(int socket, char* file){
   fp = fopen(file,"r");
   if(fp == NULL)
   {
-    fprintf(stderr, "otp_enc: couldnt open plaintext file\n");
+    fprintf(stderr, "otp_enc: couldnt open file: %s\n", fp);
     close(socket);
     exit(1);
   }
 
   fseek(fp, 0, SEEK_END);
   len = ftell(fp);
-   
+
   return len;
 }
 
@@ -163,7 +265,7 @@ char* FileToArray(char* array, int len, FILE* file){
  * Name: CheckChars()
  * Description:
  * ***********************************************************************/
-void CheckChars(int socket, int len, char txt[]){
+void CheckChars(int socket, int len, char* txt){
   char valid[28] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
   int i = 0,
       j = 0,
@@ -183,102 +285,29 @@ void CheckChars(int socket, int len, char txt[]){
          break;
        }
     }
-    
+
     //found an invalid char
     if(inBounds == 0)
     {
       fprintf(stderr, "otp_enc: plaintext file contains invalid character: %c\n", txt[i]);
       close(socket);
-      exit(1);
-    }
-  }
- 
-}
-
-
-/**************************************************************************
- * Name: SendMsg()
- * Description:
- * ***********************************************************************/
-void SendMsg(int socket, char* msg, int size){
-   int s = 0,
-       loop = size; 
-    
-  //loop until full message sent
-  while(s < loop)
-  {
-    s = send(socket, msg, size, 0);
-    //move pointers based on what successfully sent
-    size =- s;
-    msg += s;
-   
-    //if error
-    if(s == -1)
-    {
-      fprintf(stderr, "enc_c: error sending message\n");
       exit(2);
     }
   }
-}
 
-/**************************************************************************
- * Name: RecMsg()
- * Description:
- * ***********************************************************************/
-char* RecMsg(int socket, char* msg){
-  int r = 0,
-      full = 1;
-  char rec[20];
-  memset(rec, '\0', 20);
-  
-  do{
-     r = recv(socket, rec, 20, 0);
-     //if receive buffer isn't full
-     if(r != 20)
-       full = 0;
- 
-    //if error
-    if(r == -1)
-    {
-      fprintf(stderr, "enc_c: error receiving message\n");
-      exit(2);
-    }
-    strcat(msg, rec);
-    printf("in rec msg loop. msg: %s\n", msg);
-  }while(full);
-
-  return msg;
 }
 
 
 /**************************************************************************
- * Name: SendPlaintxt()
+ * Name: CompSize()
  * Description:
  * ***********************************************************************/
-void SendFile(int socket, int len, char* txt){
-  FILE *fp;
-  char *farray =  calloc (len, sizeof(char));
-  memset(farray, '\0', len);
- 
-  //open file
-  fp = fopen(txt, "r");
-  if(fp == NULL)
+void CompSize(int socket, int txt, int key){
+  //if key is too short
+  if(key < txt)
   {
-    fprintf(stderr, "otp_enc: couldn't open file: %s\n", fp);
+    fprintf(stderr, "otp_enc: key is too short\n");
     close(socket);
-    exit(1);
+    exit(2);
   }
-  
-  farray = FileToArray(farray, len, fp);  //read file to array
-  CheckChars(socket, len, farray);  //check that all chars given are valid
-
-  //send file 
-  SendMsg(socket, farray, len);
-  
-  //close file and free alloc mem
-  fclose(fp);
-  free(farray);
-  return len;
 }
-
-
