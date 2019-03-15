@@ -24,12 +24,10 @@ void CompSize(int, int, int);
 int main(int argc, char *argv[])
 {
   int socketFD,
-      portNum,
-      chWrit,
-      chRead;
-  struct sockaddr_in servAdd;
-  struct hostent* sHostInfo;
-  memset((char*)&servAdd, '\0', sizeof(servAdd));
+      port;
+  struct sockaddr_in sadd;
+  struct hostent* hostinfo;
+  memset((char*)&sadd, '\0', sizeof(sadd));
 
   //check enough args were given
   if (argc < 4)
@@ -39,19 +37,19 @@ int main(int argc, char *argv[])
    }
 
   // Set up the server address struct
-  portNum = atoi(argv[3]);
-  servAdd.sin_family = AF_INET;
-  servAdd.sin_port = htons(portNum);
-  sHostInfo = gethostbyname("localhost");
+  port = atoi(argv[3]);
+  sadd.sin_family = AF_INET;
+  sadd.sin_port = htons(port);
+  hostinfo = gethostbyname("localhost");
 
-  if (sHostInfo == NULL)
+  if (hostinfo == NULL)
   {
     fprintf(stderr, "otp_enc: no such host exists\n");
     exit(2);
   }
 
   //copy in host info
-  memcpy((char*)&servAdd.sin_addr.s_addr, (char*)sHostInfo->h_addr, sHostInfo->h_length);
+  memcpy((char*)&sadd.sin_addr.s_addr, (char*)hostinfo->h_addr, hostinfo->h_length);
 
   //create the socket
   socketFD = socket(AF_INET, SOCK_STREAM, 0);
@@ -62,30 +60,35 @@ int main(int argc, char *argv[])
   }
 
   // Connect to server
-  if (connect(socketFD, (struct sockaddr*)&servAdd, sizeof(servAdd)) < 0)
+  if (connect(socketFD, (struct sockaddr*)&sadd, sizeof(sadd)) < 0)
   {
     fprintf(stderr, "otp_enc: error connecting to server\n");
     exit(2);
   }
-  
+
   //make sure authorized to connect
   GetAuth(socketFD);
 
   //communicate with server
   ProcessFiles(socketFD, argv[1], argv[2]);
 
+  close(socketFD);
   return 0;
 }
 
 
 /**************************************************************************
- * Name: GetAuth()
- * Description:
+ * Name: GetAut()
+ * Description: Takes the socket used to communicate with the server as a 
+ * param. Sends "encode" to server to identify self as otp_enc_c and 
+ * request authorization. The server responds that authorization is either 
+ * accepted or denied. If accepted, the program continues, if denied, the 
+ * socket is closed, and the program is exited.
  * ***********************************************************************/
 void GetAuth(int socket){
   char auth[6] = "encode";
-  char* resp = calloc(RESP_SIZE, sizeof(char));
-  memset(resp, '\0', RESP_SIZE);
+  char* resp = calloc(7, sizeof(char));
+  memset(resp, '\0', 7);
 
   //send auth code
   SendMsg(socket, auth, 6);
@@ -108,7 +111,14 @@ void GetAuth(int socket){
 
 /**************************************************************************
  * Name: ProcessFiles()
- * Description:
+ * Description: Takes the socket used to communicate with the server as a 
+ * param. Also takes char arrays holding the plaintext and key filenames
+ * that were given by user from the command line as params. First, finds
+ * the file size (# of chars) of both files and sends the lengths to be 
+ * compared. If the key is shorter than the plaintext file, the program 
+ * will be terminated. If not, The files are are send to SendFile to go
+ * through further vetting and to be send to the server. Finally, an 
+ * encoded version of plaintext is received and printed to screen.
  * ***********************************************************************/
 void ProcessFiles(int socket, char* text, char* key){
   int tlen = 0,
@@ -120,13 +130,14 @@ void ProcessFiles(int socket, char* text, char* key){
   tlen = FileSize(socket, text);  //plaintext
   klen = FileSize(socket, key);   //key
   CompSize(socket, tlen, klen);
-  
+
   //validate and send plaintext and key
   SendFile(socket, tlen, text);
   SendFile(socket, klen, key);
 
   //receive encoded message and print to screen
   encoded = RecMsg(socket, encoded);
+ 
   printf("%s\n", encoded);
   fflush(stdout);
 
@@ -137,7 +148,11 @@ void ProcessFiles(int socket, char* text, char* key){
 
 /**************************************************************************
  * Name: SendFile()
- * Description:
+ * Description: Takes the socket used to communicate with the server as a 
+ * param. It also takes a char array holding a file name, and the file
+ * length, as parameters. The file is opened, then the contents are 
+ * transfered to an array. The array is checked to make sure it is composed
+ * of valid chars ('A-Z' and ' '), then the message is sent to the server.
  * ***********************************************************************/
 void SendFile(int socket, int len, char* txt){
   FILE *fp;
@@ -155,7 +170,7 @@ void SendFile(int socket, int len, char* txt){
 
   farray = FileToArray(farray, len, fp);  //read file to array
   CheckChars(socket, len, farray);  //check that all chars given are valid
-   
+
   //send file
   SendMsg(socket, farray, len);
 
@@ -167,12 +182,14 @@ void SendFile(int socket, int len, char* txt){
 
 /**************************************************************************
  * Name: SendMsg()
- * Description:
+ * Description: Takes the socket used to communicate with the server as a 
+ * param. Also takes a char array holding the message to be sent, and the 
+ * size of that array, as params. It then sends messages to the server. 
  * ***********************************************************************/
 void SendMsg(int socket, char* msg, int size){
    int s = 0,
        loop = size;
-    
+
   //loop until full message sent
   while(s < loop)
   {
@@ -193,40 +210,60 @@ void SendMsg(int socket, char* msg, int size){
 
 /**************************************************************************
  * Name: RecMsg()
- * Description:
- * ***********************************************************************/
+ * Description: Takes the socket used to communicate with the server as a 
+ * param. Also takes an empty char array to store the received message in.
+ * This function receives a message from the server it is connected to, 
+ * 20 chars at a time, and concatenates that chunk of the message to the 
+ * char array passed to the function. Once the amount of chars sent is 
+ * < 20, it is known that the message is finished sending, and the loop
+ * ends. The received message is then returned.
+ ***********************************************************************/
 char* RecMsg(int socket, char* msg){
   int r = 0,
+      i = 0,
+      j = 0,
       full = 1;
-  char rec[20];
-  memset(rec, '\0', 20);
-
+  char rec[500];
+  memset(rec, '\0', 500);
   do{
-     r = recv(socket, rec, 20, 0);
-     //if receive buffer isn't full
-     if(r != 20)
-       full = 0;
-
-    //if error
-    if(r == -1)
-    {
-      fprintf(stderr, "otp_enc: error receiving message\n");
-      exit(2);
-    }
-    strcat(msg, rec);
-  }while(full);
-  return msg;
+      i = 0;
+      //receive message
+      r = recv(socket, rec, 500, 0);
+                 
+      //if error
+      if(r == -1)
+      {
+        fprintf(stderr, "otp_enc: error receiving message\n");
+        close(socket);
+        exit(2);
+      }
+      
+      //if receive buffer isn't full
+      if(r != 500)
+        full = 0;
+       
+      //only transfer populated chars
+      for(i; i < r; i++)
+      {
+        msg[j] = rec[i];
+        j++;
+      }
+  }while(full);                                                                                                                                                 
+      return msg;
 }
 
 
 /**************************************************************************
  * Name: FileSize()
- * Description:
+ * Description: Takes the socket used to communicate with the server as a 
+ * param. Also takes a char array that holds a file name as a param. It 
+ * opens the file, finds the length of the file, and returns it. 
  * ***********************************************************************/
 int FileSize(int socket, char* file){
   int len = 0;
   FILE *fp = NULL;
 
+  //open file
   fp = fopen(file,"r");
   if(fp == NULL)
   {
@@ -235,8 +272,11 @@ int FileSize(int socket, char* file){
     exit(1);
   }
 
+  //get length of file
   fseek(fp, 0, SEEK_END);
   len = ftell(fp);
+
+  fclose(fp);
 
   return len;
 }
@@ -244,7 +284,10 @@ int FileSize(int socket, char* file){
 
 /**************************************************************************
  * Name: FileToArray()
- * Description:
+ * Description: Takes an empty char array to hold file contents, and a 
+ * file pointer pointing to file to be worked with as params. It then 
+ * cycles through to move the contents of the file to the array, one char
+ * at a time. Finally, the array is returned.
  * ***********************************************************************/
 char* FileToArray(char* array, int len, FILE* file){
   int c = 0,
@@ -256,22 +299,26 @@ char* FileToArray(char* array, int len, FILE* file){
     c = fgetc(file);
     array[i] = c;
   }
-  
+ 
   return array;
 }
 
 
 /**************************************************************************
  * Name: CheckChars()
- * Description:
+ * Description:  Takes the socket used to communicate with the server as a 
+ * param. It also takes a char array holding the message, and the size of 
+ * that array, as params. It then compares the passed array to an array of 
+ * valid chars. If all the chars are valid the program continues. If not, 
+ * the socket is closed and the program ends. 
  * ***********************************************************************/
 void CheckChars(int socket, int len, char* txt){
-  char valid[28] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
+  char valid[27] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
   int i = 0,
       j = 0,
       inBounds = 0;
-
-  //loop through plaintext
+   
+  //loop through message checking validity
   for(i; i < (len - 1); i++)
   {
     inBounds = 0;
@@ -283,13 +330,13 @@ void CheckChars(int socket, int len, char* txt){
        {
          inBounds = 1;
          break;
-       }
+       } 
     }
 
     //found an invalid char
     if(inBounds == 0)
     {
-      fprintf(stderr, "otp_enc: plaintext file contains invalid character: %c\n", txt[i]);
+      fprintf(stderr, "otp_enc: file contains invalid character: txt[%d]: %d %c\n", i, txt[i], txt[i]);
       close(socket);
       exit(2);
     }
@@ -300,7 +347,11 @@ void CheckChars(int socket, int len, char* txt){
 
 /**************************************************************************
  * Name: CompSize()
- * Description:
+ * Description: Takes the socket used to communicate with the server as a 
+ * param. Also takes the length of the plaintext file and the key file. 
+ * It compares the length of both, and if key is shorter than plaintext 
+ * the socket is closed and the program is exited. Otherwise, the program 
+ * continues.
  * ***********************************************************************/
 void CompSize(int socket, int txt, int key){
   //if key is too short

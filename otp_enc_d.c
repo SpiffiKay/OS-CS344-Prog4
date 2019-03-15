@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <signal.h>
 
 #define RESP_SIZE 70000
 
@@ -17,11 +18,14 @@ void Encode(int, char*, char*);
 
 int main(int argc, char *argv[])
 {
+  pid_t bgPIDs[128];
   int lsock,
       port,
       cnnctFD,
       spawnPID = 0,
-      i = 0;
+      i = 0,
+      j = 0,
+      k = 0;
   socklen_t cinfo;
   struct sockaddr_in servadd,
                      clientadd;
@@ -92,13 +96,21 @@ int main(int argc, char *argv[])
              ProcessInfo(cnnctFD); //encode message
              break;
          default:
+             bgPIDs[j] = spawnPID;
+             j++;
              break;
        }
    }
 
-  //close lsocking socket
+  //close listening socket
   close(lsock);
 
+  //murder zombies
+  for(k; k < j; k++)
+  {
+    kill(bgPIDs[k], SIGTERM);
+  }
+  
   return 0;
 }
 
@@ -113,9 +125,10 @@ int main(int argc, char *argv[])
 void ValidateSource(int socket){
   char denied[6] = "denied",
        accept[6] = "accept";
-  char* valid = calloc(RESP_SIZE, sizeof(char));
-  memset(valid, '\0', 70000);
+  char* valid = calloc(7, sizeof(char));
+  memset(valid, '\0', 7);
 
+   //receive validation request
    valid = RecMsg(socket, valid);
 
    //if auth invalid
@@ -210,22 +223,38 @@ void SendMsg(int socket, char* msg, int size){
 * ***********************************************************************/
 char* RecMsg(int socket, char* msg){
   int r = 0,
+      i = 0,
+      j = 0,
       full = 1;
-  char rec[20];
-  memset(rec, '\0', 20);
+  char rec[500];
+  memset(rec, '\0', 500);
 
   do{
-      r = recv(socket, rec, 20, 0);
-      //if receive buffer isn't full
-      if(r != 20)
-        full = 0;
-                                                                                                   //if error
+      i = 0;
+      //receive message
+      r = recv(socket, rec, 500, 0);
+     
+      //if error
       if(r == -1)
-      {                                                                                              fprintf(stderr, "enc_d: error receiving message from client\n");
+      {
+        fprintf(stderr, "otp_enc: error receiving message\n");
         exit(2);
-      }                                                                                            strcat(msg, rec);
-   }while(full);
-                                                                                                return msg;
+      }
+  
+      //if receive buffer isn't full
+      if(r != 500)
+        full = 0;
+            
+      //only transfer populated chars
+      for(i; i < r; i++)
+      {
+        msg[j] = rec[i];
+        j++;
+      }
+     
+  }while(full);
+  
+  return msg;
 }
 
 
@@ -238,37 +267,35 @@ char* RecMsg(int socket, char* msg){
  * the socket is closed and the program ends.
  * ***********************************************************************/
 void CheckChars(int socket, int len, char* txt){
-  char valid[28] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
+  char valid[27] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
   int i = 0,
       j = 0,
       inBounds = 0;
-
-  //loop through plaintext
+   
+  //loop through message checking validity
   for(i; i < (len - 1); i++)
   {
     inBounds = 0;
     j = 0;
     for(j; j < 27; j++)
     {
-       //char is valid
+      //char is valid
       if(txt[i] == valid[j])
       {
-         inBounds = 1;
-         break;
-      }
-    }
-
+        inBounds = 1;
+        break;
+      } 
+    } 
+ 
     //found an invalid char
     if(inBounds == 0)
     {
-      fprintf(stderr, "otp_enc: plaintext file contains invalid character: %c\n", txt[i]);
-      close(socket);
+      fprintf(stderr, "otp_enc_d: file contains invalid character: txt[%d]: %d %c\n", i, txt[i], txt[i]);
       exit(2);
-    }                                                                                          }
-}
-
-
-/**************************************************************************
+    } 
+  }
+}                                                                                
+ /**************************************************************************
  * Name: Encode()
  * Description: Takes the socket used to communicate with the client as a 
  * param. Also takes char arrays holding the plaintext message and the key
@@ -318,7 +345,7 @@ void Encode(int socket, char* txt, char* key){
      if(encoded[i] == 64)
        encoded[i] = 32;
   }
-
+     
   //send encrypted message to client
   SendMsg(socket, encoded, len);
   //free alloc mem
