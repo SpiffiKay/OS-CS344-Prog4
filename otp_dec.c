@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
  * socket is closed, and the program is exited.
  * ***********************************************************************/
 void GetAuth(int socket){
-  char auth[6] = "encode";
+  char auth[6] = "decode";
   char* resp = calloc(RESP_SIZE, sizeof(char));
   memset(resp, '\0', RESP_SIZE);
 
@@ -118,13 +118,13 @@ void GetAuth(int socket){
  * compared. If the key is shorter than the plaintext file, the program
  * will be terminated. If not, The files are are send to SendFile to go
  * through further vetting and to be send to the server. Finally, an
- * encoded version of plaintext is received and printed to screen.
+ * decoded version of plaintext is received and printed to screen.
  * ***********************************************************************/
 void ProcessFiles(int socket, char* text, char* key){
   int tlen = 0,
       klen = 0;
-  char* encoded = calloc(RESP_SIZE, sizeof(char));
-  memset(encoded, '\0', RESP_SIZE);
+  char* decoded = calloc(RESP_SIZE, sizeof(char));
+  memset(decoded, '\0', RESP_SIZE);
 
   //get the length of files and compare length
   tlen = FileSize(socket, text);  //plaintext
@@ -135,14 +135,14 @@ void ProcessFiles(int socket, char* text, char* key){
   SendFile(socket, tlen, text);
   SendFile(socket, klen, key);
 
-  //receive encoded message and print to screen
-  encoded = RecMsg(socket, encoded);
+  //receive decoded message and print to screen
+  decoded = RecMsg(socket, decoded);
 
-  printf("%s\n", encoded);
+  printf("%s\n", decoded);
   fflush(stdout);
 
   //free alloc mem
-  free(encoded);
+  free(decoded);
 }
 
 
@@ -239,7 +239,7 @@ char* RecMsg(int socket, char* msg){
      if(r != 500)
         full = 0;
   }while(full);
-
+  
       return msg;
 }
 

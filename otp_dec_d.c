@@ -14,7 +14,7 @@ void ProcessInfo(int);
 void SendMsg(int, char*, int);
 char* RecMsg(int, char*);
 void CheckChars(int, int, char*);
-void Encode(int, char*, char*);
+void Decode(int, char*, char*);
 
 int main(int argc, char *argv[])
 {
@@ -131,7 +131,7 @@ void ValidateSource(int socket){
    valid = RecMsg(socket, valid);
 
    //if auth invalid
-   if(strcmp(valid, "encode") != 0)
+   if(strcmp(valid, "decode") != 0)
    {
      SendMsg(socket, denied, 6);
      //exit child process
@@ -174,7 +174,7 @@ void ProcessInfo(int socket){
   CheckChars(socket, len, key);
 
   //encrypt file to stdout
-  Encode(socket, text, key);
+  Decode(socket, text, key);
 
   //free alloc mem
   free(text);
@@ -286,37 +286,37 @@ void CheckChars(int socket, int len, char* txt){
 
 
  /**************************************************************************
- * Name: Encode()
+ * Name: Decode()
  * Description: Takes the socket used to communicate with the client as a
  * param. Also takes char arrays holding the plaintext message and the key
- * sent from the client. An encoded message is built by adding the
+ * sent from the client. An decoded message is built by adding the
  * plaintext and key messages together, char by char. If a sum of 2 chars
  * goes out of bounds (>27), then the number is - 27 to find the correct
  * value.
  *
- * The encoded message is then sent to the client.
+ * The decoded message is then sent to the client.
  *
  * NOTE: Because the ASCII values added  together cause problems when they
  * go above 127, they first are converted over to 1-27, added together,
  * then converted back to their ASCII values.
  * ************************************************************************/
-void Encode(int socket, char* txt, char* key){
+void Decode(int socket, char* txt, char* key){
   int len = strlen(txt),
       i = 0,
       j = 0,
       t = -1,
       k = -1;
   char abc[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  char* encoded = calloc(len, sizeof(char));
-  memset(encoded, '\0', len);
+  char* decoded = calloc(len, sizeof(char));
+  memset(decoded, '\0', len);
 
   for(i; i < len; i++)
   {
     j = 0;
     t = -1;
     k = -1;
-    //change from ASCII num to 1-27 so numbers don't go over 127  (ASCII limit)
-    for(j; j < len; j++)
+    //change from ASCII num to 1-27
+    for(j; j < 27; j++)
     {
       if(txt[i] == abc[j])
         t = j;
@@ -324,20 +324,20 @@ void Encode(int socket, char* txt, char* key){
         k = j;
       if(t != -1 && k != -1)
         break;
-     }
+    }
 
-    //encrypt
-    encoded[i] = t + k + 64;
-    //subtract if out of bounds
-    if(encoded[i] > 90)
-       encoded[i] -= 27;
+    //decrypt
+    decoded[i] = t + 64 - k;
+    //add if out of bounds
+    if(decoded[i] < 64)
+       decoded[i] += 27;
      //turn '@' to ' '
-     if(encoded[i] == 64)
-       encoded[i] = 32;
+     if(decoded[i] == 64)
+       decoded[i] = 32;
   }
 
   //send encrypted message to client
-  SendMsg(socket, encoded, len);
+  SendMsg(socket, decoded, len);
   //free alloc mem
-  free(encoded);
+  free(decoded);
 }
