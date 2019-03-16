@@ -93,6 +93,7 @@ int main(int argc, char *argv[])
          case 0:
              ValidateSource(cnnctFD); //validate source is otp_enc, not otp_dec
              ProcessInfo(cnnctFD); //encode message
+             return 0;
              break;
          default:
              bgPIDs[j] = spawnPID;
@@ -122,8 +123,8 @@ int main(int argc, char *argv[])
  * denied message is sent.
  * ************************************************************************/
 void ValidateSource(int socket){
-  char denied[6] = "denied",
-       accept[6] = "accept";
+  char denied[] = "denied&",
+       accept[] = "accept&";
   char* valid = calloc(RESP_SIZE, sizeof(char));
   memset(valid, '\0', RESP_SIZE);
 
@@ -133,14 +134,13 @@ void ValidateSource(int socket){
    //if auth invalid
    if(strcmp(valid, "encode") != 0)
    {
-     SendMsg(socket, denied, 6);
+     SendMsg(socket, denied, 7);
      //exit child process
-     fprintf(stderr, "otp_dec_d: only opt_dec is allowed to use this connection\n");
      exit(2);
    }
    //if auth is valid
    else
-     SendMsg(socket, accept, 6);
+     SendMsg(socket, accept, 7);
 
   //free alloc mem
   free(valid);
@@ -222,11 +222,15 @@ void SendMsg(int socket, char* msg, int size){
 char* RecMsg(int socket, char* msg){
   int r = 0,
       i = 0,
-      full = 1;
+      j = 0,
+      end = 0;
+ char buffer[RESP_SIZE];
+ memset(buffer, '\0', RESP_SIZE);
 
-  do{
+  do
+  {
       //receive message
-      r = recv(socket, msg+i, 500, 0);
+      r = recv(socket, &buffer[i], RESP_SIZE - 1, 0);
       i += r;
 
       //if error
@@ -237,11 +241,16 @@ char* RecMsg(int socket, char* msg){
         exit(2);
       }
 
-      //if receive buffer isn't full
-     if(r != 500)
-        full = 0;
-  }while(full);
-
+      for(j; j < i; j++)
+      {
+        if(buffer[j] == '&')
+        {
+          end = 1;
+          break;
+        }
+        msg[j] = buffer[j];
+      }
+  }while(end == 0 && i < RESP_SIZE);
   return msg;
 }
 
@@ -307,8 +316,8 @@ void Encode(int socket, char* txt, char* key){
       t = -1,
       k = -1;
   char abc[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  char* encoded = calloc(len, sizeof(char));
-  memset(encoded, '\0', len);
+  char* encoded = calloc(len+1, sizeof(char));
+  memset(encoded, '\0', len+1);
 
   for(i; i < len; i++)
   {
@@ -336,8 +345,9 @@ void Encode(int socket, char* txt, char* key){
        encoded[i] = 32;
   }
 
-  //send encrypted message to client
-  SendMsg(socket, encoded, len);
+  //add EOT char and send encrypted message to client
+  strcat(encoded, "&");
+  SendMsg(socket, encoded, len+1);
   //free alloc mem
   free(encoded);
 }

@@ -15,6 +15,7 @@
 void Validate(int, int);
 void GetKey();
 
+
 int main(int argc, char* argv[]){
   srand(time(0));  //seeding rand
   int len = 0,
@@ -82,7 +83,7 @@ void Validate(int argc, int len){
 void GetKey(){
   int letter = 0;
  
-  //generate random letter for key
+  //found how to stay within range here:https://stackoverflow.com/questions/1202687/how-do-i-get-a-specific-range-of-numbers-from-rand
   letter = rand() % (90 + 1 - 64) + 64;
   
   //change '@' to ' '

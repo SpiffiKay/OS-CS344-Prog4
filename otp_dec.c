@@ -86,12 +86,12 @@ int main(int argc, char *argv[])
  * socket is closed, and the program is exited.
  * ***********************************************************************/
 void GetAuth(int socket){
-  char auth[6] = "decode";
+  char auth[] = "decode&";
   char* resp = calloc(RESP_SIZE, sizeof(char));
   memset(resp, '\0', RESP_SIZE);
 
   //send auth code
-  SendMsg(socket, auth, 6);
+  SendMsg(socket, auth, 7);
 
   //recieve response (accept or denied)
   resp = RecMsg(socket, resp);
@@ -99,7 +99,7 @@ void GetAuth(int socket){
   //if response is denied
   if(strcmp(resp, "denied") == 0)
   {
-    fprintf(stderr, "otp_dec: this script isn't authorized to access this port\n");
+    fprintf(stderr, "otp_dec: this script isn't authorized to access this server\n");
     close(socket);
     exit(2);
   }
@@ -156,8 +156,8 @@ void ProcessFiles(int socket, char* text, char* key){
  * ***********************************************************************/
 void SendFile(int socket, int len, char* txt){
   FILE *fp;
-  char *farray =  calloc (len, sizeof(char));
-  memset(farray, '\0', len);
+  char *farray =  calloc (len+1, sizeof(char));
+  memset(farray, '\0', len+1);
 
   //open file
   fp = fopen(txt, "r");
@@ -171,8 +171,9 @@ void SendFile(int socket, int len, char* txt){
   farray = FileToArray(farray, len, fp);  //read file to array
   CheckChars(socket, len, farray);  //check that all chars given are valid
 
-  //send file
-  SendMsg(socket, farray, len);
+  //add EOT and send file
+  strcat(farray, "&");
+  SendMsg(socket, farray, len+1);
 
   //close file and free alloc mem
   fclose(fp);
@@ -200,7 +201,7 @@ void SendMsg(int socket, char* msg, int size){
    //if error
    if(s == -1)
    {
-     fprintf(stderr, "otp_enc: error sending message\n");
+     fprintf(stderr, "otp_dec: error sending message\n");
      exit(2);
    }
  }while(i < size);
@@ -220,11 +221,15 @@ void SendMsg(int socket, char* msg, int size){
 char* RecMsg(int socket, char* msg){
   int r = 0,
       i = 0,
-      full = 1;
+      j = 0,
+      end = 0;
+ char buffer[RESP_SIZE];
+ memset(buffer, '\0', RESP_SIZE);
 
-  do{
+  do
+  {
       //receive message
-      r = recv(socket, msg+i, 500, 0);
+      r = recv(socket, &buffer[i], RESP_SIZE - 1, 0);
       i += r;
 
       //if error
@@ -235,12 +240,17 @@ char* RecMsg(int socket, char* msg){
         exit(2);
       }
 
-      //if receive buffer isn't full
-     if(r != 500)
-        full = 0;
-  }while(full);
-  
-      return msg;
+      for(j; j < i; j++)
+      {
+        if(buffer[j] == '&')
+        {
+          end = 1;
+          break;
+        }
+        msg[j] = buffer[j];
+      }
+  }while(end == 0 && i < RESP_SIZE);
+  return msg;
 }
 
 

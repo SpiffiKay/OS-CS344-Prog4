@@ -34,7 +34,7 @@ int main(int argc, char *argv[])
   //check if enough args included
   if (argc < 2)
   {
-    fprintf(stderr,"otp_enc_d: invalid input\n");
+    fprintf(stderr,"otp_dec_d: invalid input\n");
     exit(2);
   }
 
@@ -48,21 +48,21 @@ int main(int argc, char *argv[])
   lsock = socket(AF_INET, SOCK_STREAM, 0);
   if (lsock < 0)
   {
-    fprintf(stderr, "otp_enc_d: error creating socket\n");
+    fprintf(stderr, "otp_dec_d: error creating socket\n");
     exit(2);
   }
 
   //bind socket to port
   if (bind(lsock, (struct sockaddr *)&servadd, sizeof(servadd)) < 0)
   {
-    fprintf(stderr, "otp_enc_d: error binding socket to port %d\n", port);
+    fprintf(stderr, "otp_dec_d: error binding socket to port %d\n", port);
     exit(2);
   }
 
   //lsock for client port connections	(can accept up to 5)
   if(listen(lsock, 5) == -1)
   {
-    fprintf(stderr, "otp_enc_d: unable to listen on port %d\n", port);
+    fprintf(stderr, "otp_dec_d: unable to listen on port %d\n", port);
     exit(2);
   }
 
@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
     cinfo = sizeof(clientadd);
     cnnctFD = accept(lsock, (struct sockaddr *)&clientadd, &cinfo); // Accept
     if (cnnctFD < 0)
-      fprintf(stderr, "otp_enc_d: connection acception failed\n");
+      fprintf(stderr, "otp_dec_d: connection acception failed\n");
 
        //create child processes
        if((spawnPID = fork()) == 0)
@@ -81,18 +81,19 @@ int main(int argc, char *argv[])
        //stop fork bombs
        if(i >= 50)
        {
-         fprintf(stderr, "otp_enc_d: the forks are running wild!\n");
+         fprintf(stderr, "otp_dec_d: the forks are running wild!\n");
          exit(2);
        }
 
        switch(spawnPID)
        {
          case -1:
-             fprintf(stderr, "otp_enc_d: Apparently you can't be trusted with forks.\n");
+             fprintf(stderr, "otp_dec_d: Apparently you can't be trusted with forks.\n");
              break;
          case 0:
              ValidateSource(cnnctFD); //validate source is otp_enc, not otp_dec
              ProcessInfo(cnnctFD); //encode message
+             return 0;
              break;
          default:
              bgPIDs[j] = spawnPID;
@@ -122,8 +123,8 @@ int main(int argc, char *argv[])
  * denied message is sent.
  * ************************************************************************/
 void ValidateSource(int socket){
-  char denied[6] = "denied",
-       accept[6] = "accept";
+  char denied[] = "denied&",
+       accept[] = "accept&";
   char* valid = calloc(RESP_SIZE, sizeof(char));
   memset(valid, '\0', RESP_SIZE);
 
@@ -133,14 +134,13 @@ void ValidateSource(int socket){
    //if auth invalid
    if(strcmp(valid, "decode") != 0)
    {
-     SendMsg(socket, denied, 6);
+     SendMsg(socket, denied, 7);
      //exit child process
-     fprintf(stderr, "otp_dec_d: only opt_dec is allowed to use this connection\n");
      exit(2);
    }
    //if auth is valid
    else
-     SendMsg(socket, accept, 6);
+     SendMsg(socket, accept, 7);
 
   //free alloc mem
   free(valid);
@@ -222,11 +222,15 @@ void SendMsg(int socket, char* msg, int size){
 char* RecMsg(int socket, char* msg){
   int r = 0,
       i = 0,
-      full = 1;
+      j = 0,
+      end = 0;
+ char buffer[RESP_SIZE];
+ memset(buffer, '\0', RESP_SIZE);
 
-  do{
+  do
+  {
       //receive message
-      r = recv(socket, msg+i, 500, 0);
+      r = recv(socket, &buffer[i], RESP_SIZE - 1, 0);
       i += r;
 
       //if error
@@ -237,11 +241,16 @@ char* RecMsg(int socket, char* msg){
         exit(2);
       }
 
-      //if receive buffer isn't full
-     if(r != 500)
-        full = 0;
-  }while(full);
-
+      for(j; j < i; j++)
+      {
+        if(buffer[j] == '&')
+        {
+          end = 1;
+          break;
+        }
+        msg[j] = buffer[j];
+      }
+  }while(end == 0 && i < RESP_SIZE);
   return msg;
 }
 
@@ -307,8 +316,8 @@ void Decode(int socket, char* txt, char* key){
       t = -1,
       k = -1;
   char abc[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  char* decoded = calloc(len, sizeof(char));
-  memset(decoded, '\0', len);
+  char* decoded = calloc(len+1, sizeof(char));
+  memset(decoded, '\0', len+1);
 
   for(i; i < len; i++)
   {
@@ -336,8 +345,9 @@ void Decode(int socket, char* txt, char* key){
        decoded[i] = 32;
   }
 
-  //send encrypted message to client
-  SendMsg(socket, decoded, len);
+  //add EOT and send unencrypted message to client
+  strcat(decoded, "&");
+  SendMsg(socket, decoded, len+1);
   //free alloc mem
   free(decoded);
 }
