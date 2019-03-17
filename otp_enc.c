@@ -91,9 +91,6 @@ void GetAuth(int socket){
   char resp[RESP_SIZE];
   memset(resp, '\0', RESP_SIZE);
 
-//printf("enc: in getauth\n");/
-//fflush(stdout);
-
   //send auth code
   SendMsg(socket, auth, 7);
 
@@ -129,9 +126,6 @@ void ProcessFiles(int socket, char* text, char* key){
   char encoded[RESP_SIZE];
   memset(encoded, '\0', RESP_SIZE);
 
-//  printf("enc: processfiles: ");
-//  fflush(stdout);
-
   //get the length of files and compare length
   tlen = FileSize(socket, text);  //plaintext
   klen = FileSize(socket, key);   //key
@@ -140,11 +134,6 @@ void ProcessFiles(int socket, char* text, char* key){
   //validate and send plaintext and key
   SendFile(socket, tlen, text);
   SendFile(socket, klen, key);
-
-  //printf("text len: %d ", tlen);
-//  fflush(stdout);
-//  printf("key len: %d\n", klen);
-//  fflush(stdout);
 
   //receive encoded message and print to screen
   ptr = RecMsg(socket, encoded);
@@ -167,11 +156,6 @@ void SendFile(int socket, int len, char* txt){
   FILE *fp;
   char *farray =  calloc (len+1, sizeof(char));
   memset(farray, '\0', len+1);
-
-
-  //  printf("enc in sendfile\n");
-    //fflush(stdout);
-
 
   //open file
   fp = fopen(txt, "r");
@@ -205,9 +189,6 @@ void SendMsg(int socket, char* msg, int size){
       i = 0,
       tosend = size;
 
-    //  printf("dec: in sendmsg\n");
-    //  fflush(stdout);
-
  //loop until full message sent
  while(i < size)
  {
@@ -222,7 +203,7 @@ void SendMsg(int socket, char* msg, int size){
      fprintf(stderr, "otp_dec: error sending message\n");
      exit(2);
    }
- }
+  }
 }
 
 
@@ -249,10 +230,6 @@ char* RecMsg(int socket, char* msg){
       //receive message
       r = recv(socket, &buffer[i], RESP_SIZE - 1, 0);
       i += r;
-
-
-            //     printf("enc: recmsg loop: r: %d i: %d\n", r, i);
-            //     fflush(stdout);
 
       //if error
       if(r == -1)
@@ -286,9 +263,6 @@ int FileSize(int socket, char* file){
   int len = 0;
   FILE *fp = NULL;
 
-//printf("enc: in filesize\n");
-//fflush(stdout);
-
   //open file
   fp = fopen(file,"r");
   if(fp == NULL)
@@ -318,9 +292,6 @@ char* FileToArray(char* array, int len, FILE* file){
   int c = 0,
       i = 0;
 
-    //  printf("enc: in filetoarray\n");
-  //    fflush(stdout);
-
   //transfer chars from file to array
   for(i; i < (len - 1); i++)
   {
@@ -345,10 +316,6 @@ void CheckChars(int socket, int len, char* txt){
   int i = 0,
       j = 0,
       inBounds = 0;
-
-
-    //     printf("enc: checkchars\n");
-  //       fflush(stdout);
 
   //loop through message checking validity
   for(i; i < (len-1); i++)
@@ -387,10 +354,6 @@ void CheckChars(int socket, int len, char* txt){
  * ***********************************************************************/
 void CompSize(int socket, int txt, int key){
   //if key is too short
-
- //printf("enc: in compsize\n");
- //fflush(stdout);
-
   if(key < txt)
   {
     fprintf(stderr, "otp_enc: key is too short\n");

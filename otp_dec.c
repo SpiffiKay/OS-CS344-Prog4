@@ -91,6 +91,9 @@ void GetAuth(int socket){
   char resp[RESP_SIZE];
   memset(resp, '\0', RESP_SIZE);
 
+  //printf("dec: in getauth\n");
+  //fflush(stdout);
+
   //send auth code
   SendMsg(socket, auth, 7);
 
@@ -126,6 +129,9 @@ void ProcessFiles(int socket, char* text, char* key){
   char decoded[RESP_SIZE];
   memset(decoded, '\0', RESP_SIZE);
 
+    //printf("dec: processfiles: ");
+    //fflush(stdout);
+
   //get the length of files and compare length
   tlen = FileSize(socket, text);  //plaintext
   klen = FileSize(socket, key);   //key
@@ -134,6 +140,11 @@ void ProcessFiles(int socket, char* text, char* key){
   //validate and send plaintext and key
   SendFile(socket, tlen, text);
   SendFile(socket, klen, key);
+
+  //printf("text len: %d ", tlen);
+  //fflush(stdout);
+  //printf("key len: %d\n", klen);
+  //fflush(stdout);
 
   //receive decoded message and print to screen
   ptr = RecMsg(socket, decoded);
@@ -156,6 +167,10 @@ void SendFile(int socket, int len, char* txt){
   FILE *fp;
   char *farray =  calloc (len+1, sizeof(char));
   memset(farray, '\0', len+1);
+
+
+    //printf("dec in sendfile\n");
+    //fflush(stdout);
 
   //open file
   fp = fopen(txt, "r");
@@ -189,6 +204,9 @@ void SendMsg(int socket, char* msg, int size){
   int s = 0,
       i = 0,
       tosend = size;
+
+    //  printf("dec: in sendmsg\n");
+    //  fflush(stdout);
 
  //loop until full message sent
  while(i < size)
@@ -232,6 +250,9 @@ char* RecMsg(int socket, char* msg){
       r = recv(socket, &buffer[i], RESP_SIZE - 1, 0);
       i += r;
 
+              //   printf("dec: recmsg loop: r: %d i: %d\n", r, i);
+              //   fflush(stdout);
+
       //if error
       if(r == -1)
       {
@@ -264,6 +285,10 @@ int FileSize(int socket, char* file){
   int len = 0;
   FILE *fp = NULL;
 
+
+  //printf("dec: in filesize\n");
+  //fflush(stdout);
+
   //open file
   fp = fopen(file,"r");
   if(fp == NULL)
@@ -294,6 +319,9 @@ char* FileToArray(char* array, int len, FILE* file){
   int c = 0,
       i = 0;
 
+//printf("dec: in filetoarray\n");
+//fflush(stdout);
+
   //transfer chars from file to array
   for(i; i < (len - 1); i++)
   {
@@ -318,6 +346,9 @@ void CheckChars(int socket, int len, char* txt){
   int i = 0,
       j = 0,
       inBounds = 0;
+
+  //  printf("dec: checkchars\n");
+    //fflush(stdout);
 
   //loop through message checking validity
   for(i; i < (len-1); i++)
@@ -355,6 +386,10 @@ void CheckChars(int socket, int len, char* txt){
  * continues.
  * ***********************************************************************/
 void CompSize(int socket, int txt, int key){
+
+  //printf("dec: in compsize\n");
+  //fflush(stdout);
+
 
   //if key is too short
   if(key < txt)

@@ -152,9 +152,6 @@ void ValidateSource(int socket){
   char valid[RESP_SIZE];
   memset(valid, '\0', RESP_SIZE);
 
-  //printf("dec_d: in validate source\n");
-  //fflush(stdout);
-
    //receive validation request
    ptr = RecMsg(socket, valid);
    sprintf(valid, ptr);
@@ -189,8 +186,6 @@ void ProcessInfo(int socket){
   memset(text, '\0', RESP_SIZE);
   memset(key, '\0', RESP_SIZE);
 
-  //printf("dec_d: processinfo: ");
-  //fflush(stdout);
   //receive plaintext and keygen files
   tptr = RecMsg(socket, text);
   kptr = RecMsg(socket, key);
@@ -201,15 +196,9 @@ void ProcessInfo(int socket){
   len = strlen(text);
   CheckChars(socket, len, text);
 
-  //printf("text len: %d ", len);
-  //fflush(stdout);
-
   len = 0;
   len = strlen(key);
   CheckChars(socket, len, key);
-
-  //printf("key len: %d\n", len);
-  //fflush(stdout);
 
   //encrypt file to stdout
   Decode(socket, text, key);
@@ -226,9 +215,6 @@ void SendMsg(int socket, char* msg, int size){
   int s = 0,
       i = 0,
       tosend = size;
-
-    //  printf("dec: in sendmsg\n");
-    //  fflush(stdout);
 
  //loop until full message sent
  while(i < size)
@@ -272,10 +258,6 @@ char* RecMsg(int socket, char* msg){
       r = recv(socket, &buffer[i], RESP_SIZE - 1, 0);
       i += r;
 
-
-                // printf("dec_d: recmsg loop: r: %d i: %d\n", r, i);
-                 //fflush(stdout);
-
       //if error
       if(r == -1)
       {
@@ -311,9 +293,6 @@ void CheckChars(int socket, int len, char* txt){
   int i = 0,
       j = 0,
       inBounds = 0;
-
-    //  printf("dec_d: checkchars\n");
-    //  fflush(stdout);
 
   //loop through message checking validity
   for(i; i < (len-1); i++)
@@ -365,11 +344,6 @@ void Decode(int socket, char* txt, char* key){
   char abc[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   char* decoded = calloc(len+1, sizeof(char));
   memset(decoded, '\0', len+1);
-
-
-  //  printf("dec_d: in decode\n");
-  //  fflush(stdout);
-
 
   for(i; i < len; i++)
   {
