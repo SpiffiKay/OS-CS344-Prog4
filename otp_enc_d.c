@@ -9,19 +9,25 @@
 
 #define RESP_SIZE 75000
 
+//global variable so I don't give up on life
+int COUNT_THE_CHILDREN = 0;
+
 void ValidateSource(int);
 void ProcessInfo(int);
 void SendMsg(int, char*, int);
 char* RecMsg(int, char*);
 void CheckChars(int, int, char*);
 void Encode(int, char*, char*);
+void dedChild(int);
 
 int main(int argc, char *argv[])
 {
   pid_t bgPIDs[128];
-  int lsock,
+  int childExit,
+      numcnncts = 0,
+      lsock,
       port,
-      cnnctFD,
+      newsock,
       spawnPID = 0,
       i = 0,
       j = 0,
@@ -30,6 +36,13 @@ int main(int argc, char *argv[])
   struct sockaddr_in servadd,
                      clientadd;
   memset((char *)&servadd, '\0', sizeof(servadd));
+
+  //deal with SIGCHLD
+  struct sigaction ded_child = {0};
+  ded_child.sa_handler = dedChild;
+  sigfillset(&ded_child.sa_mask);
+  ded_child.sa_flags = SA_RESTART;
+  sigaction(SIGCHLD, &ded_child, NULL);
 
   //check if enough args included
   if (argc < 2)
@@ -66,19 +79,28 @@ int main(int argc, char *argv[])
     exit(2);
   }
 
+
+
   //permanent while loop to keep server open
   while(1)
   {
-    // Accept a connection, blocking if one is not available until one connects
+
     cinfo = sizeof(clientadd);
-    cnnctFD = accept(lsock, (struct sockaddr *)&clientadd, &cinfo); // Accept
-    if (cnnctFD < 0)
+    //printf("PARENT # of connects: %d\n", newsock);
+    newsock = accept(lsock, (struct sockaddr *)&clientadd, &cinfo); // Accept
+    // Accept a connection, blocking if one is not available until one connects
+
+    if (newsock < 0)
+    {
       fprintf(stderr, "otp_enc_d: connection acception failed\n");
+      exit(2);
+    }
+    else
+      COUNT_THE_CHILDREN++;
 
        //create child processes
        if((spawnPID = fork()) == 0)
-          i++;
-       //stop fork bombs
+       //stop fork bombsf
        if(i >= 50)
        {
          fprintf(stderr, "otp_enc_d: the forks are running wild!\n");
@@ -91,13 +113,20 @@ int main(int argc, char *argv[])
              fprintf(stderr, "otp_enc_d: Apparently you can't be trusted with forks.\n");
              break;
          case 0:
-             ValidateSource(cnnctFD); //validate source is otp_enc, not otp_dec
-             ProcessInfo(cnnctFD); //encode message
+             ValidateSource(newsock); //validate source is otp_enc, not otp_dec
+             ProcessInfo(newsock); //encode message
+             close(newsock);
              return 0;
              break;
          default:
              bgPIDs[j] = spawnPID;
              j++;
+
+             while((spawnPID = waitpid(-1, &childExit, WNOHANG)) > 0)
+             {
+               COUNT_THE_CHILDREN--;
+             }
+
              break;
        }
    }
@@ -125,25 +154,28 @@ int main(int argc, char *argv[])
 void ValidateSource(int socket){
   char denied[] = "denied&",
        accept[] = "accept&";
-  char* valid = calloc(RESP_SIZE, sizeof(char));
+  char* ptr = NULL;
+  char valid[RESP_SIZE];
   memset(valid, '\0', RESP_SIZE);
 
+  //printf("enc_d: in validate source\n");
+//  fflush(stdout);
+
    //receive validation request
-   valid = RecMsg(socket, valid);
+   ptr = RecMsg(socket, valid);
+   sprintf(valid, ptr);
 
    //if auth invalid
    if(strcmp(valid, "encode") != 0)
    {
      SendMsg(socket, denied, 7);
      //exit child process
+     close(socket);
      exit(2);
    }
    //if auth is valid
    else
      SendMsg(socket, accept, 7);
-
-  //free alloc mem
-  free(valid);
 }
 
 
@@ -157,28 +189,36 @@ void ValidateSource(int socket){
  * ************************************************************************/
 void ProcessInfo(int socket){
   int len = 0;
-  char* text = calloc(RESP_SIZE, sizeof(char));
-  char* key = calloc(RESP_SIZE, sizeof(char));
+  char* tptr = NULL;
+  char* kptr = NULL;
+  char text[RESP_SIZE];
+  char key[RESP_SIZE];
   memset(text, '\0', RESP_SIZE);
   memset(key, '\0', RESP_SIZE);
 
+  //printf("enc_d: processinfo: ");
+  //fflush(stdout);
   //receive plaintext and keygen files
-  text = RecMsg(socket, text);
-  key = RecMsg(socket, key);
+  tptr = RecMsg(socket, text);
+  kptr = RecMsg(socket, key);
+  sprintf(text, tptr);
+  sprintf(key, kptr);
 
   //make sure plaintext has no illegal chars
   len = strlen(text);
   CheckChars(socket, len, text);
+
+  //printf("text len: %d ", len);
+//  fflush(stdout);
+
   len = 0;
   len = strlen(key);
   CheckChars(socket, len, key);
 
+  //printf("key len: %d\n", len);
+//  fflush(stdout);
   //encrypt file to stdout
   Encode(socket, text, key);
-
-  //free alloc mem
-  free(text);
-  free(key);
 }
 
 
@@ -190,22 +230,27 @@ void ProcessInfo(int socket){
  * ***********************************************************************/
 void SendMsg(int socket, char* msg, int size){
   int s = 0,
-      i = 0;
+      i = 0,
+      tosend = size;
+
+    //  printf("dec: in sendmsg\n");
+    //  fflush(stdout);
 
  //loop until full message sent
- do
+ while(i < size)
  {
-   s = send(socket, msg+i, size, 0);
+   s = send(socket, msg+i, tosend, 0);
    //move pointers based on what successfully sent
    i += s;
+   tosend -= s;
 
    //if error
    if(s == -1)
    {
-     fprintf(stderr, "otp_enc: error sending message\n");
+     fprintf(stderr, "otp_dec: error sending message\n");
      exit(2);
    }
- }while(i < size);
+ }
 }
 
 
@@ -229,10 +274,14 @@ char* RecMsg(int socket, char* msg){
 
   do
   {
+
+
       //receive message
       r = recv(socket, &buffer[i], RESP_SIZE - 1, 0);
       i += r;
 
+          // printf("enc_d: recmsg loop: r: %d i: %d\n", r, i);
+          // fflush(stdout);
       //if error
       if(r == -1)
       {
@@ -269,6 +318,9 @@ void CheckChars(int socket, int len, char* txt){
       j = 0,
       inBounds = 0;
 
+   //printf("enc_d: checkchars\n");
+  // fflush(stdout);
+
   //loop through message checking validity
   for(i; i < (len-1); i++)
   {
@@ -288,7 +340,8 @@ void CheckChars(int socket, int len, char* txt){
     if(inBounds == 0)
     {
       fprintf(stderr, "otp_dec_d: file contains invalid character: txt[%d]: %d %c\n", i, txt[i], txt[i]);
-      exit(2);
+      close(socket);
+      exit(1);
     }
   }
 }
@@ -318,6 +371,9 @@ void Encode(int socket, char* txt, char* key){
   char abc[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   char* encoded = calloc(len+1, sizeof(char));
   memset(encoded, '\0', len+1);
+
+  //printf("enc_d: in encode\n");
+  //fflush(stdout);
 
   for(i; i < len; i++)
   {
@@ -350,4 +406,10 @@ void Encode(int socket, char* txt, char* key){
   SendMsg(socket, encoded, len+1);
   //free alloc mem
   free(encoded);
+}
+
+//Deals with SIGCHLD signal. Keeps an accurate count of live children.
+//I've been dealing with this problem for days, so my humor has gotten dark.
+void dedChild(int signo){
+  COUNT_THE_CHILDREN--;
 }
